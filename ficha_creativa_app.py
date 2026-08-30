@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import os
 import pickle
@@ -17,6 +18,69 @@ st.set_page_config(
     page_title="Ficha Creativa: Mesa de Mezclas",
     page_icon="🎛️",
     layout="centered"
+)
+
+# ---- OCULTAR BARRAS SUPERIOR E INFERIOR (SISTEMA QUIRÚRGICO TROPICARNES) ----
+hide_streamlit_style = """
+    <style>
+    /* Ocultar por completo la cabecera (Share, GitHub, 3 puntos) */
+    [data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* Ocultar pie de página y línea decorativa */
+    footer {visibility: hidden; display: none !important;}
+    div[data-testid="stDecoration"] {display: none !important;}
+    #stConnectionStatus {display: none !important;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Vigilante permanente con MutationObserver para "Manage app" y badges de Streamlit
+components.html(
+    """
+    <script>
+    (function () {
+        const SELECTORES = [
+            'a[href*="streamlit.io"]',
+            'a[href*="share.streamlit.io"]',
+            '[class*="viewerBadge"]',
+            '[class*="StatusWidget"]',
+            '[data-testid="stStatusWidget"]',
+            '[data-testid="stToolbar"]',
+            'iframe[title="Manage app"]',
+            'button[data-testid="manage-app-button"]'
+        ];
+
+        function ocultarEn(doc) {
+            if (!doc) return;
+            SELECTORES.forEach(function (sel) {
+                doc.querySelectorAll(sel).forEach(function (el) {
+                    el.style.setProperty("display", "none", "important");
+                    el.style.setProperty("visibility", "hidden", "important");
+                    el.style.setProperty("pointer-events", "none", "important");
+                });
+            });
+        }
+
+        function ejecutar() {
+            try { ocultarEn(window.top.document); } catch (e) {}
+            ocultarEn(document);
+        }
+
+        ejecutar();
+
+        try {
+            const observer = new MutationObserver(ejecutar);
+            observer.observe(window.top.document.body, { childList: true, subtree: true });
+        } catch (e) {}
+
+        setInterval(ejecutar, 1000);
+    })();
+    </script>
+    """,
+    height=0,
 )
 
 # ID de la carpeta raíz receptora en Google Drive (Entregas_Taller)
