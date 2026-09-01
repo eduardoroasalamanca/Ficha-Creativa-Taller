@@ -147,40 +147,39 @@ ESQUEMA JSON DE SALIDA OBLIGATORIO:
     "canales_digitales": {
         "instagram": "@usuario",
         "tiktok": "@usuario",
-        "whatsapp": "+58XXXXXXXXXX"
+        "whatsapp": "+58XXXXXXXXXX",
+        "web_actual": "https://sitio.com"
     }
 }
 """
 
 def obtener_servicio_drive():
-    """Obtiene el servicio de Drive desde token.json local o st.secrets."""
     creds = None
     if os.path.exists('token.json'):
         try:
             with open('token.json', 'rb') as token:
                 creds = pickle.load(token)
         except Exception as e:
-            st.error(f"Error al leer el archivo 'token.json' local: {e}")
+            st.error(f"Error al leer 'token.json': {e}")
             return None
     elif "GOOGLE_TOKEN_PICKLE" in st.secrets:
         try:
             token_bytes = base64.b64decode(st.secrets["GOOGLE_TOKEN_PICKLE"])
             creds = pickle.loads(token_bytes)
         except Exception as e:
-            st.error(f"Error al decodificar las credenciales desde Secrets: {e}")
+            st.error(f"Error al decodificar GOOGLE_TOKEN_PICKLE: {e}")
             return None
     else:
-        st.error("No se encontraron credenciales de Google Drive (token.json no existe y GOOGLE_TOKEN_PICKLE no está en Secrets).")
+        st.error("No se encontraron credenciales de Google Drive.")
         return None
 
     try:
         return build('drive', 'v3', credentials=creds)
     except Exception as e:
-        st.error(f"Error al conectar con la API de Google Drive: {e}")
+        st.error(f"Error al conectar con Google Drive: {e}")
         return None
 
 def crear_carpeta_proyecto(service, nombre_carpeta, parent_id):
-    """Crea una subcarpeta para el proyecto dentro de Entregas_Taller."""
     try:
         file_metadata = {
             'name': nombre_carpeta,
@@ -190,11 +189,10 @@ def crear_carpeta_proyecto(service, nombre_carpeta, parent_id):
         folder = service.files().create(body=file_metadata, fields='id').execute()
         return folder.get('id')
     except Exception as e:
-        st.error(f"Error al crear la carpeta del proyecto en Google Drive: {e}")
+        st.error(f"Error al crear carpeta en Drive: {e}")
         return None
 
 def subir_a_google_drive(service, uploaded_file, target_folder_id):
-    """Sube un archivo a la carpeta del proyecto en Google Drive."""
     try:
         file_metadata = {
             'name': uploaded_file.name,
@@ -208,14 +206,13 @@ def subir_a_google_drive(service, uploaded_file, target_folder_id):
         archivo = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
         return archivo
     except Exception as e:
-        st.error(f"Error al subir '{uploaded_file.name}' a Google Drive: {e}")
+        st.error(f"Error al subir '{uploaded_file.name}': {e}")
         return None
 
 def ejecutar_traductor_gemini(ficha_datos):
-    """Llama a la API de Gemini para generar la Ficha JSON Maestra de VÉNTUM."""
     api_key = st.secrets.get("GEMINI_API_KEY", "")
     if not api_key:
-        st.warning("⚠️ No se encontró GEMINI_API_KEY en st.secrets. Se omitió la traducción automática.")
+        st.warning("⚠️ No se encontró GEMINI_API_KEY en st.secrets.")
         return None
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
@@ -227,12 +224,8 @@ def ejecutar_traductor_gemini(ficha_datos):
     )
 
     payload = {
-        "contents": [
-            {"role": "user", "parts": [{"text": prompt_usuario}]}
-        ],
-        "systemInstruction": {
-            "parts": [{"text": SYSTEM_PROMPT_TRADUCTOR}]
-        },
+        "contents": [{"role": "user", "parts": [{"text": prompt_usuario}]}],
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT_TRADUCTOR}]},
         "generationConfig": {
             "temperature": 0.2,
             "responseMimeType": "application/json"
@@ -254,7 +247,6 @@ def ejecutar_traductor_gemini(ficha_datos):
         return None
 
 def enviar_notificacion_email(cliente, nombre_carpeta, modalidad, cant_archivos, tiene_json_maestro):
-    """Envía un correo al taller cuando entra una nueva ficha."""
     smtp_server = st.secrets.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(st.secrets.get("SMTP_PORT", 587))
     remitente = st.secrets.get("EMAIL_REMITENTE", "")
@@ -296,11 +288,10 @@ def enviar_notificacion_email(cliente, nombre_carpeta, modalidad, cant_archivos,
         server.quit()
         return True
     except Exception as e:
-        st.warning(f"No se pudo enviar la alerta por correo electrónico: {e}")
+        st.warning(f"No se pudo enviar correo: {e}")
         return False
 
 def enviar_notificacion_whatsapp(cliente, nombre_carpeta, modalidad, cant_archivos, json_maestro):
-    """Envía un mensaje de WhatsApp directo con el JSON Maestro formateado vía Green API."""
     id_instance = st.secrets.get("GREEN_ID_INSTANCE", "")
     api_token = st.secrets.get("GREEN_API_TOKEN", "")
     numero = st.secrets.get("WHATSAPP_DESTINO", "").replace("+", "").strip()
@@ -323,17 +314,14 @@ def enviar_notificacion_whatsapp(cliente, nombre_carpeta, modalidad, cant_archiv
         f"📋 *FICHA MAESTRA JSON (Para AI Studio):*\n```json\n{str_json}\n```"
     )
 
-    payload = {
-        "chatId": chat_id,
-        "message": mensaje
-    }
+    payload = {"chatId": chat_id, "message": mensaje}
     headers = {'Content-Type': 'application/json'}
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=10)
         return res.status_code == 200
     except Exception as e:
-        st.warning(f"No se pudo enviar la alerta por WhatsApp: {e}")
+        st.warning(f"No se pudo enviar WhatsApp: {e}")
         return False
 
 # --- ENCABEZADO PRINCIPAL CENTRADO ---
@@ -386,16 +374,42 @@ with st.container():
     )
     conversion_otros = st.text_input("Si elegiste 'Otros' en Cierre y Conversión, descríbelo:", placeholder="Detalla los cierres...")
 
-# --- BLOQUE 3 ---
+# --- BLOQUE 3: ECOSISTEMA DIGITAL EXISTENTE & REDES SOCIALES ---
 with st.container():
-    st.subheader("Bloque 3: Estilo Visual & Paleta")
+    st.subheader("Bloque 3: Ecosistema Digital Existente & Redes")
+    st.caption("Sistemas, aplicaciones web, botones de pedidos o redes sociales que se deban integrar a la nueva página.")
+    
+    st.markdown("**1. Sistema o App Web Preexistente (Ej: Tropicarnes Digital, Menú Streamlit, etc.)**")
+    col_sys1, col_sys2 = st.columns(2)
+    with col_sys1:
+        sistema_nombre = st.text_input("Nombre del Sistema / App", placeholder="Ej: Tropicarnes Digital (App Pedidos)")
+        sistema_tipo_integracion = st.selectbox(
+            "Tipo de Integración Sugerida",
+            ["Botón CTA Destacado", "Widget / Botón Flotante", "Incrustado Directo (iFrame)", "Menú Principal"]
+        )
+    with col_sys2:
+        sistema_url = st.text_input("URL / Enlace del Sistema", placeholder="Ej: https://tropicarnes.streamlit.app")
+        sistema_texto_cta = st.text_input("Texto del Botón de Acción", placeholder="Ej: ¡Hacer Pedido Online!")
+
+    st.markdown("**2. Canales Digitales & Contacto**")
+    col_red1, col_red2 = st.columns(2)
+    with col_red1:
+        social_instagram = st.text_input("Instagram", placeholder="@usuario")
+        social_tiktok = st.text_input("TikTok", placeholder="@usuario")
+    with col_red2:
+        social_whatsapp = st.text_input("WhatsApp de Atención", placeholder="+58414XXXXXXX")
+        social_web_actual = st.text_input("Sitio Web Actual (si existe)", placeholder="https://ejemplo.com")
+
+# --- BLOQUE 4 ---
+with st.container():
+    st.subheader("Bloque 4: Estilo Visual & Paleta")
     col3, col4 = st.columns(2)
     with col3:
         color_opcion = st.selectbox(
             "Colores",
             ["Subir guía o manual de marca", "Indicar colores clave u 'Otros'"]
         )
-        colores_detalle = st.text_input("Si elegiste 'Indicar colores clave' u 'Otros', especifica:", placeholder="Ej: Azul Marino y Dorado")
+        colores_detalle = st.text_input("Si elegiste 'Indicar colores clave' u 'Otros', especifica:", placeholder="Ej: Rojo Carnicero, Negro Carbon y Blanco")
     with col4:
         tipografia = st.selectbox(
             "Tipografía",
@@ -403,9 +417,9 @@ with st.container():
         )
         tipografia_otros = st.text_input("Si elegiste 'Otros' en Tipografía, descríbelo:", placeholder="Nombre de fuente o estilo...")
 
-# --- BLOQUE 4 ---
+# --- BLOQUE 5 ---
 with st.container():
-    st.subheader("Bloque 4: Zona de Descarga (Insumos para Drive)")
+    st.subheader("Bloque 5: Zona de Descarga (Insumos para Drive)")
     archivos_cargados = st.file_uploader(
         "Arrastra o selecciona aquí los insumos desde tu PC",
         accept_multiple_files=True,
@@ -413,9 +427,9 @@ with st.container():
     )
     st.caption("Todos los archivos cargados se guardarán automáticamente en una carpeta dedicada dentro de Entregas_Taller en Google Drive.")
 
-# --- BLOQUE 5 ---
+# --- BLOQUE 6 ---
 with st.container():
-    st.subheader("Bloque 5: Modalidad de Trabajo & Compromiso")
+    st.subheader("Bloque 6: Modalidad de Trabajo & Compromiso")
     modalidad = st.radio(
         "Modalidad de Trabajo",
         [
@@ -434,7 +448,6 @@ if enviar:
         service = obtener_servicio_drive()
         
         if service:
-            # 1. Crear carpeta individualizada para el proyecto
             with st.spinner("Creando carpeta dedicada para el proyecto en Google Drive..."):
                 timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 nombre_carpeta_proyecto = f"Proyecto - {cliente} ({timestamp_str})"
@@ -443,7 +456,6 @@ if enviar:
             if project_folder_id:
                 archivos_subidos_drive = []
                 
-                # 2. Subir insumos a Google Drive
                 if archivos_cargados:
                     with st.spinner("Subiendo insumos a la carpeta del proyecto..."):
                         exitosos = 0
@@ -459,7 +471,23 @@ if enviar:
                         if exitosos > 0:
                             st.success(f"{exitosos} archivo(s) de insumos subido(s) correctamente.")
 
-                # 3. Compilar datos de la ficha recibida
+                # Estructuración completa de datos para el Agente Traductor
+                elementos_digitales = []
+                if sistema_nombre or sistema_url:
+                    elementos_digitales.append({
+                        "nombre_sistema": sistema_nombre,
+                        "url_destino": sistema_url,
+                        "tipo_integracion": sistema_tipo_integracion,
+                        "texto_accion": sistema_texto_cta
+                    })
+
+                canales_digitales = {
+                    "instagram": social_instagram,
+                    "tiktok": social_tiktok,
+                    "whatsapp": social_whatsapp,
+                    "web_actual": social_web_actual
+                }
+
                 ficha_datos = {
                     "fecha_ingreso": str(datetime.now()),
                     "cliente": cliente,
@@ -473,6 +501,8 @@ if enviar:
                     "modulos_otros": modulos_otros,
                     "conversion": conversion,
                     "conversion_otros": conversion_otros,
+                    "elementos_digitales_existentes": elementos_digitales,
+                    "canales_digitales": canales_digitales,
                     "color_opcion": color_opcion,
                     "colores_detalle": colores_detalle,
                     "tipografia": tipografia,
@@ -489,12 +519,12 @@ if enviar:
                     def getvalue(self):
                         return self.content
 
-                # 4. Guardar archivo JSON raw original
+                # Guardar Ficha Raw
                 nombre_json_raw = f"Ficha_Raw_{cliente.replace(' ', '_')}.json"
                 json_raw_bytes = json.dumps(ficha_datos, indent=4, ensure_ascii=False).encode('utf-8')
                 subir_a_google_drive(service, BytesFile(json_raw_bytes, nombre_json_raw), project_folder_id)
 
-                # 5. Ejecutar Traductor Gemini (Elemento A) -> Ficha JSON Maestra VÉNTUM
+                # Traducción con Gemini API
                 json_maestro_ventum = None
                 with st.spinner("⚡ Procesando Traductor Universal VÉNTUM con Gemini IA..."):
                     json_maestro_ventum = ejecutar_traductor_gemini(ficha_datos)
@@ -504,7 +534,7 @@ if enviar:
                     json_maestro_bytes = json.dumps(json_maestro_ventum, indent=4, ensure_ascii=False).encode('utf-8')
                     subir_a_google_drive(service, BytesFile(json_maestro_bytes, nombre_json_maestro), project_folder_id)
 
-                # 6. Enviar notificaciones (Email + WhatsApp)
+                # Notificaciones
                 with st.spinner("Enviando alertas de notificación al equipo VÉNTUM..."):
                     email_ok = enviar_notificacion_email(
                         cliente=cliente,
@@ -521,7 +551,6 @@ if enviar:
                         json_maestro=json_maestro_ventum
                     )
 
-                # 7. Confirmación final e interactiva en UI
                 st.success(f"Ficha registrada y traducida con éxito para {cliente}. Información organizada en '{nombre_carpeta_proyecto}'.")
                 
                 if json_maestro_ventum:
@@ -541,4 +570,4 @@ if enviar:
                     if alertas:
                         st.info(f"Notificación enviada vía: {', '.join(alertas)}.")
                     else:
-                        st.info("La carpeta ha sido creada y organizada en la unidad de Google Drive del Taller.")
+                        st.info("La carpeta ha sido creada y organizada en Google Drive.")
